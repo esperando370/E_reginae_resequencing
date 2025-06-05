@@ -1,0 +1,63 @@
+1. Read Preprocessing
+Tool: HTStream
+
+Steps:
+
+Remove duplicates (hts_SuperDeduper)
+
+Trim adapters (hts_Overlapper, hts_SeqScreener)
+
+Trim low-quality bases (hts_QWindowTrim)
+
+Filter reads shorter than 35bp (hts_LengthFilter)
+
+Remove reads with ambiguous nucleotides (hts_NTrimmer)
+
+Generate quality statistics (hts_Stats)
+
+Example command:
+
+bash
+Copiar
+Editar
+hts_Stats -L "$output_dir"/"$sample"_stats.log -1 "$input_dir"/"$sample"_R1* -2 "$input_dir"/"$sample"_R2* \
+    | hts_SuperDeduper \
+    | hts_Overlapper \
+    | hts_SeqScreener -s "$adapters" \
+    | hts_QWindowTrim \
+    | hts_LengthFilter -m 35 \
+    | hts_NTrimmer -e \
+    | hts_Stats -A "$output_dir"/"$sample"_stats.log -F -u -f "$output_dir"/"$sample" -N final_stats
+2. Read Alignment and BAM Processing
+Tool: BWA-MEM2, Picard, SAMtools
+
+Steps:
+
+Align reads to the E. reginae reference genome.
+
+Merge SAM files:
+
+bash
+Copiar
+Editar
+picard MergeSamFiles I="$dir"/"$sample"_bwa-se.sam I="$dir"/"$sample"_bwa-pe.sam O="$out_dir"/"$sample"_merged.sam USE_THREADING=true
+Convert SAM to BAM:
+
+bash
+Copiar
+Editar
+samtools view -@ "$Th" -bS "$out_dir"/"$sample"_merged.sam -o "$out_dir"/"$sample"_merged.bam
+Add Read Groups:
+
+bash
+Copiar
+Editar
+picard AddOrReplaceReadGroups I="$out_dir"/"$sample"_merged.bam O="$out_dir"/"$sample"_merged_rg.bam RGID="$sample" RGLB="lib1" RGPL="ILLUMINA" RGPU="unit1" RGSM="$sample" VALIDATION_STRINGENCY=LENIENT
+Sort and index BAM:
+
+bash
+Copiar
+Editar
+picard SortSam I="$out_dir"/"$sample"_merged_rg.bam O="$out_dir"/"$sample"_sorted.bam SORT_ORDER=coordinate
+picard MarkDuplicates I="$out_dir"/"$sample"_sorted.bam O="$out_dir"/"$sample"_dedup.bam M="$out_dir"/"$sample"_dedup_metrics.txt REMOVE_DUPLICATES=false
+picard BuildBamIndex I="$out_dir"/"$sample"_dedup.bam
