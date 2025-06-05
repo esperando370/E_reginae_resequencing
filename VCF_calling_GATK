@@ -1,0 +1,79 @@
+3. Known-Sites VCF Generation
+Tool: BCFtools
+
+Steps:
+
+Call raw SNPs from a selected subset of BAMs:
+
+bash
+Copiar
+Editar
+bcftools mpileup -Ou -f "$ref" $(printf "$out_dir/%s_dedup.bam " "${samples[@]}") | \
+bcftools call -mv -Oz -o "$out_dir"/Ereg_selected_population_raw_variants.vcf.gz
+Filter SNPs:
+
+bash
+Copiar
+Editar
+bcftools filter -i 'QUAL>30 && INFO/DP>10' "$out_dir"/Ereg_selected_population_raw_variants.vcf.gz | \
+bcftools norm -f "$ref" -Oz -o "$out_dir"/Ereg_selected_known_sites.vcf.gz
+4. Base Quality Score Recalibration (BQSR)
+Tool: GATK
+
+Steps:
+
+Index VCF:
+
+bash
+Copiar
+Editar
+gatk IndexFeatureFile -I "$out_dir"/Ereg_selected_known_sites.vcf.gz
+Recalibrate:
+
+bash
+Copiar
+Editar
+gatk BaseRecalibrator -R "$ref" -I "$out_dir"/"$sample"_dedup.bam --known-sites "$out_dir"/Ereg_selected_known_sites.vcf.gz -O "$out_dir"/"$sample"_recal_data.table
+gatk ApplyBQSR -R "$ref" -I "$out_dir"/"$sample"_dedup.bam --bqsr-recal-file "$out_dir"/"$sample"_recal_data.table -O "$out_dir"/"$sample"_final.bam
+5. Variant Calling
+Tool: GATK HaplotypeCaller
+
+Steps:
+
+Split genome:
+
+bash
+Copiar
+Editar
+gatk SplitIntervals -R "$ref" -O "$out_dir"/intervals_dir --scatter-count 100 --subdivision-mode BALANCING_WITHOUT_ANY_REGARD_TO_INTERVAL_SUBDIVISION --interval-merging-rule OVERLAPPING_ONLY
+Run in parallel using GNU Parallel.
+
+Gather VCFs:
+
+bash
+Copiar
+Editar
+gatk GatherVcfs $(ls "$out_dir"/gvcf_chunks/"$sample"/*.g.vcf.gz | sort | awk '{print "-I "$1}' | tr '\n' ' ') -O "$out_dir"/"$sample".g.vcf.gz
+6. Joint Genotyping and Filtering
+Tools: GATK CombineGVCFs, GenotypeGVCFs, BCFtools
+
+Steps:
+
+Combine per-sample GVCFs by cohort or species:
+
+bash
+Copiar
+Editar
+gatk CombineGVCFs -R "$ref" $(cat "$gvcf_list.txt" | awk '{print "--variant "$1}') -O "$out_dir"/combined.g.vcf.gz
+Joint genotype:
+
+bash
+Copiar
+Editar
+gatk GenotypeGVCFs -R "$ref" -V "$out_dir"/combined.g.vcf.gz -O "$out_dir"/variants.vcf.gz
+Filter:
+
+bash
+Copiar
+Editar
+bcftools filter -i 'QUAL>20 && INFO/DP>10' "$out_dir"/variants.vcf.gz | bcftools norm -f "$ref" -Oz -o "$out_dir"/filtered_variants.vcf.gz
